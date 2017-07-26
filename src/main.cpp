@@ -8,6 +8,7 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include "PathPlaner.h"
 
 using namespace std;
 
@@ -159,9 +160,11 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
+
 int main() {
   uWS::Hub h;
 
+  PathPlaner pp;
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
   vector<double> map_waypoints_y;
@@ -196,7 +199,7 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&pp](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -233,11 +236,47 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
 
+          	//pack data for path planer
+          	InputData d;
+          	d.self_d = car_d;
+          	d.self_s = car_s;
+          	d.self_speed =car_speed;
+          	double theta = deg2rad(car_yaw);
+          	d.self_yaw = theta;
+          	int nextWaypoint = NextWaypoint(car_x,car_y,theta,map_waypoints_x,map_waypoints_y);
+          	d.waypoint_d = 0;
+          	d.waypoint_s = map_waypoints_s[nextWaypoint];
+          	vector<double> previous_path_s;
+          	vector<double> previous_path_d;
+          	for(int i=0; i<previous_path_x.size();i++){
+          	  auto sd = getFrenet(previous_path_x[i],previous_path_y[i],theta, map_waypoints_x,map_waypoints_y);
+          	  previous_path_s.push_back(sd[0]);
+          	  previous_path_d.push_back(sd[1]);
+          	}
+
+          	d.previous_s = previous_path_s;
+          	d.previous_d = previous_path_d;
+          	for(auto vehicle:sensor_fusion){
+          	  d.sensor_data.push_back(vehicle);
+          	}
+
+          	vector<double> next_s_vals;
+          	vector<double> next_d_vals;
+          	pp.processingInputData(d);
+          	pp.getBestTrajectory(next_s_vals,next_d_vals);
+
+
+
           	json msgJson;
 
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
 
+          	for(int i=0;i<next_s_vals.size();i++){
+          	  auto xy = getXY(next_s_vals[i],next_d_vals[i],map_waypoints_s,map_waypoints_x,map_waypoints_y);
+          	  next_x_vals.push_back(xy[0]);
+          	  next_y_vals.push_back(xy[1]);
+          	}
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           	msgJson["next_x"] = next_x_vals;

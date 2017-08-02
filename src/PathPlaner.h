@@ -9,51 +9,28 @@
 #define PATHPLANER_H_
 
 #include <vector>
+#include "Eigen-3.3/Eigen/Dense"
+using namespace std;
+using namespace Eigen;
+
+const int N =50;
+
+
+struct PointState2D{
+	  VectorXd s;
+	  VectorXd d;
+};
 
 struct InputData{
-  double self_s;
-  double self_d;
-  double self_yaw;
-  double self_speed;
-  std::vector<double> previous_s;
-  std::vector<double> previous_d;
-  double end_s;
-  double end_d;
-  double waypoint_s;
-  double waypoint_d;
-  std::vector<std::vector<double> > sensor_data;
+  PointState2D self_state;
+  vector<vector<double> > sensor_data;
 };
 
 struct Vehicle{
-	double x;
-	double y;
-	double s;
-	double d;
-	double vx;
-	double vy;
-	double v;
-	double yaw;
+	PointState2D state;
 	int lane_id;
 	bool exist;
 };
-struct Trajectory{
-	std::vector<double> s;
-	std::vector<double> s_deriv1;
-	std::vector<double> s_deriv2;
-	std::vector<double> s_deriv3;
-	std::vector<double> d;
-	std::vector<double> d_deriv1;
-	std::vector<double> d_deriv2;
-	std::vector<double> d_deriv3;
-	double Ts;
-	double Td;
-	double Ts_expected;
-  double Td_expected;
-  double S_expected;
-  double D_expected;
-	double cost;
-};
-
 
 class PathPlaner {
  public:
@@ -68,27 +45,28 @@ class PathPlaner {
   	Vehicle back_left;
   	Vehicle back_right;
   } env;
+
+  struct CurveFlag{
+    bool overspeed;
+    bool underspeed;
+    bool overaccel;
+    bool overjerk;
+  };
+
   Vehicle self;
-  //help point for spline
-  double help_s;
-  double help_d;
-  //reference time to reach target
-  double ref_time_s;
-  double ref_time_d;
   //
-  double next_waypoint_s;
-  double next_waypoint_d;
 
  public:
   void processingInputData(const InputData& data);
-  void getBestTrajectory(std::vector<double>&ss,std::vector<double> &dd);
+  void getBestTrajectory(std::vector<PointState2D>& trj);
 
  private:
-  Trajectory generateTrajectory(double s_i, double s_f, double d_i, double d_f,
-                                double t_s, double ts_ref,double t_d,double td_ref);
-
-  bool collisionFree(const Trajectory& trj);
-  double calculateCost(const Trajectory& trj);
+  VectorXd JMT(const VectorXd& start,const VectorXd& target, double T);
+  bool generateValidPath(const PointState2D &start, const PointState2D& target, double T,vector<PointState2D>& trj);
+  double getBestJMP_KeepLane(std::vector<PointState2D>& path);
+  double generatePathWithLimits(const PointState2D &target_state,vector<PointState2D>& path,bool distance_limit, bool jerk_limit=true);
+  double getFollow_KeepLane(vector<PointState2D>& path);
+  vector<VectorXd> generateJMTPath(const PointState2D& start,const PointState2D& target, double T, CurveFlag& flags);
 };
 
 #endif /* PATHPLANER_H_ */

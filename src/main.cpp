@@ -8,7 +8,11 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include <fstream>
+#include <string>
 #include "PathPlaner.h"
+#include "spline.h"
+
 
 using namespace std;
 
@@ -161,6 +165,7 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 }
 
 
+
 int main() {
   uWS::Hub h;
 
@@ -198,8 +203,52 @@ int main() {
   	map_waypoints_dx.push_back(d_x);
   	map_waypoints_dy.push_back(d_y);
   }
+  /***
+   * keep a variable containing last trajectory including
+   * x,y, x',y',x'', y'', as for JMP, s,s',and s'' are needed for continuity.
+   */
+  tk::spline curve_smoother_x;
+  tk::spline curve_smoother_y;
+  curve_smoother_x.set_points(map_waypoints_s,map_waypoints_x);
+  curve_smoother_y.set_points(map_waypoints_s,map_waypoints_y);
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&pp](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  int new_sample_count = floor(max_s)+1;
+  map_waypoints_x.resize(new_sample_count);
+  map_waypoints_y.resize(new_sample_count);
+  map_waypoints_s.resize(new_sample_count);
+
+//  ofstream log("spline.txt", std::ofstream::out);
+
+  for(int i=0;i<new_sample_count-1;i++)
+  {
+    map_waypoints_s[i]=i;
+    map_waypoints_x[i] = curve_smoother_x(map_waypoints_s[i]);
+    map_waypoints_y[i] = curve_smoother_y(map_waypoints_s[i]);
+//    log<<map_waypoints_s[i]<<","<<map_waypoints_x[i]<<","<<map_waypoints_y[i]<<endl;
+  }
+  //last point
+  int i = new_sample_count-1;
+  map_waypoints_s[i] = max_s;
+  map_waypoints_x[i] = curve_smoother_x(map_waypoints_s[i]);
+  map_waypoints_y[i] = curve_smoother_y(map_waypoints_s[i]);
+/*  log<<map_waypoints_s[i]<<","<<map_waypoints_x[i]<<","<<map_waypoints_y[i]<<endl;
+  log.close();*/
+  vector<PointState2D> last_prediction(N);
+  for(int i=0; i<N; i++)
+  {
+    last_prediction[i].s = VectorXd(3);
+    last_prediction[i].d = VectorXd(3);
+  }
+
+  //pack data for path planer
+  InputData d;
+  d.self_state.s = VectorXd(3);
+  d.self_state.d = VectorXd(3);
+
+  double last_theta;
+
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,
+			   &map_waypoints_dy,&pp,&last_prediction,&last_theta,&d](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -236,35 +285,53 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
 
-          	//pack data for path planer
-          	InputData d;
-          	d.self_d = car_d;
-          	d.self_s = car_s;
-          	d.self_speed =car_speed;
+
           	double theta = deg2rad(car_yaw);
-          	d.self_yaw = theta;
-          	int nextWaypoint = NextWaypoint(car_x,car_y,theta,map_waypoints_x,map_waypoints_y);
-          	d.waypoint_d = 0;
-          	d.waypoint_s = map_waypoints_s[nextWaypoint];
-          	vector<double> previous_path_s;
-          	vector<double> previous_path_d;
-          	for(int i=0; i<previous_path_x.size();i++){
-          	  auto sd = getFrenet(previous_path_x[i],previous_path_y[i],theta, map_waypoints_x,map_waypoints_y);
-          	  previous_path_s.push_back(sd[0]);
-          	  previous_path_d.push_back(sd[1]);
+
+          	size_t size = previous_path_x.size();
+          	if(size > 0){
+          		size_t index = last_prediction.size() - size -1;
+          		PointState2D next_point = last_prediction[index];
+              double delta_theta = theta - last_theta;
+          		d.self_state=next_point;
+          		//d.self_state.s[1] = -next_point.d[1] * sin(delta_theta) + next_point.s[1] * cos(delta_theta);
+          		//d.self_state.s[2] = -next_point.d[2] * sin(delta_theta) + next_point.s[2] * cos(delta_theta);
+//              d.self_state.d[0] = car_d;
+//          		d.self_state.d[1] = next_point.d[1];
+//          		d.self_state.d[2] = next_point.d[2];
+          	  //d.self_state.d[1] = next_point.d[1] * cos(delta_theta) + next_point.s[1] * sin(delta_theta);
+          		//d.self_state.d[2] = next_point.d[2] * cos(delta_theta) + next_point.s[2] * sin(delta_theta);
+
+          	}else
+          	{
+          		d.self_state.s << car_s,car_speed,0;
+          		d.self_state.d << car_d,0,0;
           	}
 
-          	d.previous_s = previous_path_s;
-          	d.previous_d = previous_path_d;
+          	for(int i=0;i<N-size;i++)
+          	{
+
+          	  cout << last_prediction[i].s[0]<<" "<<last_prediction[i].d[0]<<" "<<endl;
+          	}
+//          	static int cycle = 0;
+//          	ofstream log("log.txt",std::ofstream::out | std::ofstream::app);
+//
+//          	for(int i = 0; i<N; i++)
+//          	{
+//          		log<<cycle<< " "<<last_prediction[i].s[0] << " "<< last_prediction[i].d[0] <<endl;
+//          	}
+//          	log.close();
+//          	cycle ++;
+
+          	last_theta = theta;
+
           	for(auto vehicle:sensor_fusion){
           	  d.sensor_data.push_back(vehicle);
           	}
 
-          	vector<double> next_s_vals;
-          	vector<double> next_d_vals;
-          	pp.processingInputData(d);
-          	pp.getBestTrajectory(next_s_vals,next_d_vals);
 
+          	pp.processingInputData(d);
+          	pp.getBestTrajectory(last_prediction);
 
 
           	json msgJson;
@@ -272,18 +339,25 @@ int main() {
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
 
-          	for(int i=0;i<next_s_vals.size();i++){
-          	  auto xy = getXY(next_s_vals[i],next_d_vals[i],map_waypoints_s,map_waypoints_x,map_waypoints_y);
+          	for(int i=0;i<last_prediction.size();i++){
+          	  auto xy = getXY(last_prediction[i].s[0],last_prediction[i].d[0],map_waypoints_s,map_waypoints_x,map_waypoints_y);
+          	  //auto xy = getXY(last_prediction[i].s[0],6,map_waypoints_s,map_waypoints_x,map_waypoints_y);
           	  next_x_vals.push_back(xy[0]);
           	  next_y_vals.push_back(xy[1]);
+
           	}
+
+
+
+
+
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           	msgJson["next_x"] = next_x_vals;
           	msgJson["next_y"] = next_y_vals;
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
-
+          	//std::cout << msg << std::endl;
           	//this_thread::sleep_for(chrono::milliseconds(1000));
           	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
           

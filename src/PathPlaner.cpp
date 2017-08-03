@@ -193,7 +193,8 @@ double PathPlaner::getBestJMP_KeepLane(vector<PointState2D>& path){
 
 
 	if (env.front.exist) {
-		target.s << env.front.state.s[0],env.front.state.s[1],0;
+	  //set target is front car with safe distance CAR_LENGTH
+		target.s << env.front.state.s[0]-CAR_LENGTH,env.front.state.s[1],0;
 		cost = generatePathWithLimits(target,path,true,true);
 	}else
 	{
@@ -222,6 +223,7 @@ double PathPlaner::generatePathWithLimits(const PointState2D &target_state,vecto
   //in caase the distance is confined, stop the first loop
   if (distance_limit == true) {
     range = candidate_state.s[0] - self.state.s[0];
+    delta_r = 0;
   }
 
   double range_low = range;
@@ -325,8 +327,12 @@ double PathPlaner::generatePathWithLimits(const PointState2D &target_state,vecto
       path[i].d<<d,speed_d,accel_d;
     }
     cout<<"Search: "<<count<<" best S:"<<best_S<<" current D:"<<self.state.d[0]<<endl;
-  }else
-    cout<<"!!!!!!!!No valid curve found!!!!!!!!!!!!!!!!!!!!!!!!!!"<<endl;
+  }else{
+    cout<<"!!!!!!!!No valid curve found for distance_limit:"<<distance_limit
+        <<" range:"<<range<<" foundUpbound:"<<found_Upbound<<" my speed:"<<self.state.s[1]<<" accel:"<<self.state.s[2]
+        <<" target speed:"<<candidate_state.s[1]<<endl;
+  }
+
   return best_T;
 
 }

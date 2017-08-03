@@ -247,7 +247,7 @@ int main() {
 
   double last_theta;
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,max_s,
 			   &map_waypoints_dy,&pp,&last_prediction,&last_theta,&d](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -308,11 +308,11 @@ int main() {
           		d.self_state.d << car_d,0,0;
           	}
 
-          	for(int i=0;i<N-size;i++)
-          	{
-
-          	  cout << last_prediction[i].s[0]<<" "<<last_prediction[i].d[0]<<" "<<endl;
-          	}
+//          	for(int i=0;i<N-size;i++)
+//          	{
+//
+//          	  cout << last_prediction[i].s[0]<<" "<<last_prediction[i].d[0]<<" "<<endl;
+//          	}
 //          	static int cycle = 0;
 //          	ofstream log("log.txt",std::ofstream::out | std::ofstream::app);
 //
@@ -340,6 +340,10 @@ int main() {
           	vector<double> next_y_vals;
 
           	for(int i=0;i<last_prediction.size();i++){
+          	  //check if it runs over one whole circle.
+          	  if(last_prediction[i].s[0]>max_s){
+          	    last_prediction[i].s[0] -= max_s;
+          	  }
           	  auto xy = getXY(last_prediction[i].s[0],last_prediction[i].d[0],map_waypoints_s,map_waypoints_x,map_waypoints_y);
           	  //auto xy = getXY(last_prediction[i].s[0],6,map_waypoints_s,map_waypoints_x,map_waypoints_y);
           	  next_x_vals.push_back(xy[0]);

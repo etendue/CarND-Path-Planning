@@ -290,7 +290,7 @@ int main() {
 
           	size_t size = previous_path_x.size();
           	if(size > 0){
-          		size_t index = last_prediction.size() - size -1;
+          		size_t index = last_prediction.size() - size;
           		PointState2D next_point = last_prediction[index];
               double delta_theta = theta - last_theta;
           		d.self_state=next_point;
@@ -325,6 +325,7 @@ int main() {
 
           	last_theta = theta;
 
+          	d.sensor_data.clear();
           	for(auto vehicle:sensor_fusion){
           	  d.sensor_data.push_back(vehicle);
           	}
@@ -350,11 +351,6 @@ int main() {
           	  next_y_vals.push_back(xy[1]);
 
           	}
-
-
-
-
-
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           	msgJson["next_x"] = next_x_vals;

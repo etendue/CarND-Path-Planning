@@ -62,11 +62,14 @@ class PathPlaner {
 
  private:
   VectorXd JMT(const VectorXd& start,const VectorXd& target, double T);
-  bool generateValidPath(const PointState2D &start, const PointState2D& target, double T,vector<PointState2D>& trj);
+  bool generateValidPath(const PointState2D& target, vector<PointState2D>& trj);
   double getBestJMP_KeepLane(std::vector<PointState2D>& path);
   double generatePathWithLimits(const PointState2D &target_state,vector<PointState2D>& path,bool distance_limit, bool jerk_limit=true);
+  double generateSafePath(const PointState2D &target_state,vector<PointState2D>& path);
   double getFollow_KeepLane(vector<PointState2D>& path);
   vector<VectorXd> generateJMTPath(const PointState2D& start,const PointState2D& target, double T, CurveFlag& flags);
+	void getCurve(const std::vector<VectorXd>& best_coeff,
+			std::vector<PointState2D>& path);
 };
 
 #endif /* PATHPLANER_H_ */

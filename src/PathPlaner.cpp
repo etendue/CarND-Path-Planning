@@ -38,12 +38,13 @@ PathPlaner::PathPlaner() {
   self.state.s = VectorXd(3);
   self.state.d = VectorXd(3);
 
-  /*self.state.s<<0,0,0;
+  //my speed:7.79597 accel:-3.20324 target speed:17.4176
+  self.state.s<<0,18.2644,-0.398246;
   self.state.d<<1,0,0;
   PointState2D target;
   target.s = VectorXd(3);
   target.d = VectorXd(3);
-  target.s << 50,20,0;
+  target.s << 13.2366,18.5042,0;
   target.d << 0,0,0;
   vector<PointState2D> path(N);
   for(int i=0;i<N;i++)
@@ -52,14 +53,15 @@ PathPlaner::PathPlaner() {
     path[i].d = VectorXd(3);
   }
 
-  generatePathWithLimits(target,path,true,true);
-  for(int i=0;i<N;i++)
-  {
-     cout << path[i].s[0]<<" "<<path[i].s[1]<<" "<<path[i].s[2]<<" ";
-     cout << path[i].d[0]<<" "<<path[i].d[1]<<" "<<path[i].d[2]<<endl;
-  }
+//  generateValidPath(target,path);
+//  generatePathWithLimits(target,path,true,true);
+//  for(int i=0;i<N;i++)
+//  {
+//     cout << path[i].s[0]<<" "<<path[i].s[1]<<" "<<path[i].s[2]<<" ";
+//     cout << path[i].d[0]<<" "<<path[i].d[1]<<" "<<path[i].d[2]<<endl;
+//  }
 
-  generatePathWithLimits(target,path,false,true);*/
+ // generatePathWithLimits(target,path,false,true);
 
 }
 
@@ -81,7 +83,8 @@ void PathPlaner::processingInputData(const InputData& data)
 	env.back_left.exist = false;
 	env.back_right.exist = false;
 
-	for(auto other : data.sensor_data){
+	for(int i=0; i<data.sensor_data.size();i++){
+		vector<double> other = data.sensor_data[i];
 		Vehicle v;
 		v.state.s = VectorXd(3);
 		v.state.d = VectorXd(3);
@@ -187,21 +190,44 @@ double PathPlaner::getBestJMP_KeepLane(vector<PointState2D>& path){
 	PointState2D target;
 	target.s = VectorXd(3);
 	target.d = VectorXd(3);
-	target.d << self.lane_id * 4.0 - 2,0,0;
-	target.s << -1,maximum_speed,0;
+	target.d << self.lane_id * 4.0 - 2, 0, 0;
+	target.s << self.state.s[0] + 30, maximum_speed, 0;
 	double cost;
 
-
 	if (env.front.exist) {
-	  //set target is front car with safe distance CAR_LENGTH
-		target.s << env.front.state.s[0]-CAR_LENGTH,env.front.state.s[1],0;
-		cost = generatePathWithLimits(target,path,true,true);
-	}else
-	{
-	  cost = generatePathWithLimits(target,path,false,true);
+		//set target is front car with safe distance CAR_LENGTH
+		target.s << env.front.state.s[0] - CAR_LENGTH, env.front.state.s[1], 0;
+
+		generateValidPath(target, path);
+	} else {
+		// cost = generatePathWithLimits(target,path,false,true);
+		generateValidPath(target, path);
 	}
 
 	return cost;
+}
+
+void PathPlaner::getCurve(const vector<VectorXd>& best_coeff,
+		vector<PointState2D>& path) {
+	VectorXd tv(6);
+	for (int i = 0; i < N; i++) {
+		double t = dt * i;
+		tv << 1, t, t * t, t * t * t, t * t * t * t, t * t * t * t * t;
+		double s, d;
+		double speed_s, speed_d;
+		double accel_s, accel_d;
+		double jerk_s, jerk_d;
+		//calculate longitude trajectory
+		s = best_coeff[0].dot(tv);
+		speed_s = best_coeff[1].dot(tv);
+		accel_s = best_coeff[2].dot(tv);
+		//calculate lateral trajectory
+		d = best_coeff[3].dot(tv);
+		speed_d = best_coeff[4].dot(tv);
+		accel_d = best_coeff[5].dot(tv);
+		path[i].s << s, speed_s, accel_s;
+		path[i].d << d, speed_d, accel_d;
+	}
 }
 
 double PathPlaner::generatePathWithLimits(const PointState2D &target_state,vector<PointState2D>& path, bool distance_limit, bool jerk_limit)
@@ -251,14 +277,14 @@ double PathPlaner::generatePathWithLimits(const PointState2D &target_state,vecto
 
       if(!flags.overjerk && !flags.overaccel && !flags.overspeed){
         if(!flags.underspeed){// a valid path is found
-          double s_in_one_second = -self.state.s[0];
-          for (int i=0; i<coefficients[0].size();i++) {
-            s_in_one_second += coefficients[0][i];
-          }
+//          double s_in_one_second = -self.state.s[0];
+//          for (int i=0; i<coefficients[0].size();i++) {
+//            s_in_one_second += coefficients[0][i];
+//          }
 
-          if (s_in_one_second > best_S) {
+          if (T < best_T) {
             best_T = T;
-            best_S = s_in_one_second;
+            best_S = range;
             best_coeff = coefficients;
           }
           found_valid = true;
@@ -302,177 +328,121 @@ double PathPlaner::generatePathWithLimits(const PointState2D &target_state,vecto
     }
   } while (range < max_range && delta_r > min_range && !distance_limit);
 
-  if(best_S>0){
-    VectorXd tv(6);
-    for (int i = 0; i < N; i++) {
-
-      double t = dt * i;
-      tv << 1, t, t * t, t * t * t, t * t * t * t, t * t * t * t * t;
-
-      double s, d;
-      double speed_s, speed_d;
-      double accel_s, accel_d;
-      double jerk_s, jerk_d;
-
-      //calculate longitude trajectory
-      s = best_coeff[0].dot(tv);
-      speed_s = best_coeff[1].dot(tv);
-      accel_s = best_coeff[2].dot(tv);
-
-      //calculate lateral trajectory
-      d = best_coeff[3].dot(tv);
-      speed_d = best_coeff[4].dot(tv);
-      accel_d = best_coeff[5].dot(tv);
-      path[i].s<<s,speed_s,accel_s;
-      path[i].d<<d,speed_d,accel_d;
-    }
-    cout<<"Search: "<<count<<" best S:"<<best_S<<" current D:"<<self.state.d[0]<<endl;
-  }else{
-    cout<<"!!!!!!!!No valid curve found for distance_limit:"<<distance_limit
-        <<" range:"<<range<<" foundUpbound:"<<found_Upbound<<" my speed:"<<self.state.s[1]<<" accel:"<<self.state.s[2]
-        <<" target speed:"<<candidate_state.s[1]<<endl;
-  }
+	if (best_T < 1000) {
+		getCurve(best_coeff, path);
+		cout << "Search: " << count << " best S:" << best_S << " velocity:"
+				<< self.state.s[1] << "Target Speed:" << target_state.s[1]
+				<< " accel:" << self.state.s[2] << endl;
+	} else {
+		cout << "!!!!!!!!No valid curve found for distance_limit:"
+				<< distance_limit << " range:" << range << " foundUpbound:"
+				<< found_Upbound << " my speed:" << self.state.s[1] << " target speed:" << candidate_state.s[1]
+				<< " accel:"<< self.state.s[2] << endl;
+		generateSafePath(target_state, path);
+	}
 
   return best_T;
 
 }
+double PathPlaner::generateSafePath(const PointState2D &target_state,vector<PointState2D>& path){
 
+	double delta_v = target_state.s[1] - self.state.s[1];
+	double s;
+	double speed_s;
+	double accel_s;
+	s = self.state.s[0];
+	speed_s =  self.state.s[1];
+	accel_s =  self.state.s[2];
 
-bool PathPlaner::generateValidPath(const PointState2D &start, const PointState2D& target, double T,vector<PointState2D>& trj)
+	for (int i = 0; i < N; i++) {
+		if(speed_s >target_state.s[1])
+		{
+			accel_s -=max_jerk *dt;
+			accel_s = accel_s<-max_accel? -max_accel:accel_s;
+		}else
+		{
+			if(accel_s>0){
+				accel_s -= max_jerk *dt;
+				accel_s = accel_s<0? 0:accel_s;
+			}else{
+				accel_s +=max_jerk*dt;
+				accel_s = accel_s>=0? 0:accel_s;
+			}
+		}
+		speed_s += accel_s * dt;
+
+		s += speed_s * dt;
+
+		path[i].s << s, speed_s, accel_s;
+		path[i].d << self.state.d;
+	}
+	cout<<"Safe trajectory: speed increase to :"<< path.back().s[1]<<" S:"<<path.back().s[0]<<" Accel:"<<path.back().s[2]<<endl;
+}
+
+bool PathPlaner::generateValidPath(const PointState2D& target,vector<PointState2D>& path)
 {
-//
-//	//init and final states
-//	VectorXd state_s_i(3);
-//	VectorXd state_s_f(3);
-//	VectorXd state_d_i(3);
-//	VectorXd state_d_f(3);
-//
-//
-//
-//	double distance_s = target.s - start.s;
-//	double distance_d = target.d - start.d;
-//	//curve coefficients for longitude and lateral
-//	VectorXd s_co,d_co;
-//
-//	random_device rd;
-//	default_random_engine gen(rd());
-//
-//	normal_distribution<double> s_pertub(distance_s,fabs(distance_s/10.0));
-//	normal_distribution<double> d_pertub(distance_d,fabs(distance_d/10.0));
-//	normal_distribution<double> T_pertub(T,T/10.0);
-//
-//  vector<vector<PointDynamicsSD>> candidates_trj;
-//  double delta_v = 1;
-//  double target_vs = start.vs;
-//  double target_vd = start.vd;
-//
-//  bool found = false;
-//  int MAX_TRY = 500;
-//  int total_try = 0;
-//	while (delta_v > 0.001){
-//
-//		vector<PointDynamicsSD> tmp_trj;
-//		found = false;
-//		for(int k= 0; k< MAX_TRY; k++){
-//			double T_sample = T_pertub(gen);
-//			double s_sample = s_pertub(gen);
-//			double d_sample = d_pertub(gen);
-//
-//			state_s_i << 0, start.vs, start.as;
-//			state_s_f << s_sample, target_vs, 0;
-//			state_d_i << 0, start.vd, start.ad;
-//			state_d_f << d_sample, target_vd, 0;
-//
-//			s_co = JMT(state_s_i,state_s_f,T_sample);
-//			d_co = JMT(state_d_i,state_d_f,T_sample);
-//
-//			//validate the curve
-//			//coefficients for velocity, acceleration and jerk,
-//			VectorXd s_veloc(6), s_accl(6), s_jerk(6);
-//			s_veloc << s_co[1], 2 * s_co[2], 3 * s_co[3], 4 * s_co[4], 5 * s_co[5], 0;
-//			s_accl << 2 * s_co[2], 6 * s_co[3], 12 * s_co[4], 20 * s_co[5], 0, 0;
-//			s_jerk << 6 * s_co[3], 24 * s_co[4], 60 * s_co[5], 0, 0, 0;
-//
-//			VectorXd d_veloc(6), d_accl(6), d_jerk(6);
-//			d_veloc << d_co[1], 2 * d_co[2], 3 * d_co[3], 4 * d_co[4], 5
-//					* d_co[5], 0;
-//			d_accl << 2 * d_co[2], 6 * d_co[3], 12 * d_co[4], 20 * d_co[5], 0, 0;
-//			d_jerk << 6 * d_co[3], 24 * d_co[4], 60 * d_co[5], 0, 0, 0;
-//
-//			VectorXd tv(6);
-//
-//
-//			for (int i = 0; i < N; i++) {
-//
-//				double t = dt * i;
-//				tv << 1, t, t * t, t * t * t, t * t * t * t, t * t * t * t * t;
-//
-//				double s, d;
-//				double speed_s, speed_d;
-//				double accel_s, accel_d;
-//				double jerk_s, jerk_d;
-//
-//				//calculate longitude trajectory
-//				s = s_co.dot(tv);
-//				speed_s = s_veloc.dot(tv);
-//				accel_s = s_accl.dot(tv);
-//				jerk_s = s_jerk.dot(tv);
-//
-//				//calculate lateral trajectory
-//				d = d_co.dot(tv);
-//				speed_d = d_veloc.dot(tv);
-//				accel_d = d_accl.dot(tv);
-//				jerk_d = d_jerk.dot(tv);
-//
-//				if (speed_s < 0) {
-//					cout << "speed is negative" << endl;
-//					break;
-//				}
-//				if ((speed_s * speed_s + speed_d * speed_d)
-//						> maximum_speed * maximum_speed) {
-//					break;
-//				}
-//				if ((accel_s * accel_s + accel_d * accel_d)
-//						> max_accel * max_accel) {
-//					break;
-//				}
-//				if ((jerk_s * jerk_s + jerk_d * jerk_d) > max_jerk * max_jerk) {
-//					break;
-//				}
-//				tmp_trj.push_back({s+start.s,d,speed_s,speed_d,accel_s,accel_d});
-//			}
-//
-//			if(tmp_trj.size()==N){
-//				candidates_trj.push_back(tmp_trj);
-//				cout<<"find curve with speed:"<<target_vs<<" T:"<<T_sample<<" S:"<<tmp_trj.back().s<<endl;
-//				found = true;
-//			}
-//		}
-//		if (found) {
-//			target_vs += delta_v;
-//		} else {
-//			delta_v = delta_v / 2;
-//			target_vs -= delta_v;
-//		}
-//		total_try += MAX_TRY;
-//	}
-//
-//	if(candidates_trj.size()==0){
-//		cout<< "No valid trajectory is found after "<<total_try<<" tries :("<<endl;
-//		return false;
-//	}else
-//	{
-//		trj = candidates_trj[0];
-//		for(auto item:candidates_trj){
-//			if(item.back().s> trj.back().s){
-//				trj = item;
-//			}
-//		}
-//		cout<< candidates_trj.size()<< " found, best trajectory with S:"<<trj.back().s<<" speed "<<trj.back().vs<<endl;
-//	}
 
-	return true;
+	//init and final states
+	PointState2D target_copy;
+	target_copy = target;
 
+	double distance_s = target.s[0] - self.state.s[0];
+	double distance_d = target.d[0] - self.state.d[0];
+
+	double T_guess =  distance_s/((target.s[1] + self.state.s[1])/2);
+	double T_lowbound, T_highbound;
+
+	T_lowbound = T_guess/2;
+	T_highbound = T_guess*2;
+
+
+
+
+	random_device rd;
+	default_random_engine gen(rd());
+
+	normal_distribution<double> s_pertub(target.s[0], fabs(distance_s / 10.0));
+	normal_distribution<double> d_pertub(target.d[0], fabs(distance_d / 10.0));
+	uniform_real_distribution<double> T_pertub(T_lowbound,T_highbound);
+
+
+	double best_T = 1000;
+	CurveFlag flags;
+
+	int MAX_TRY = 500;
+	int counter = 0;
+	vector<VectorXd> best_curve;
+	while (counter < MAX_TRY) {
+		double T_sample = T_pertub(gen);
+		double s_sample = s_pertub(gen);
+		double d_sample = d_pertub(gen);
+
+		target_copy.s[0] = s_sample;
+		target_copy.d[0] = d_sample;
+
+		//curve coefficients for longitude and lateral
+		vector<VectorXd> coeff=generateJMTPath(self.state, target_copy, T_sample, flags);
+		if(!flags.overaccel && !flags.overjerk&&!flags.overspeed&&!flags.underspeed){
+			if(best_T > T_sample){
+				best_T = T_sample;
+				best_curve = coeff;
+			}
+		}
+
+		counter++;
+	}
+
+	if(best_T <1000){
+		getCurve(best_curve, path);
+		cout<<"Found Curve:  best T:"<<best_T<<" velocity:"<<self.state.s[1]<<
+				"Target Speed:"<<target.s[1]<<" accel:"<<self.state.s[2] <<" distance:"<<distance_s<<endl;
+		return true;
+	}else{
+		cout<<"!!!!!!!!No valid curve found for speed:"<<self.state.s[1]<<
+				"Target Speed:"<<target.s[1]<<" accel:"<<self.state.s[2]<<" distance:"<<distance_s<<endl;
+		generateSafePath(target,path);
+		return false;
+	}
 }
 vector<VectorXd> PathPlaner::generateJMTPath(const PointState2D& start,const PointState2D& target, double T, CurveFlag& flags)
 {

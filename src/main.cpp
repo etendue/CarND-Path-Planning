@@ -196,6 +196,9 @@ int main() {
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
 
+  //tell way point is a round trip and rest s when it overflow
+  pp.setMaxS(max_s);
+
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
   string line;
@@ -221,8 +224,11 @@ int main() {
    * keep a variable containing last trajectory including
    * x,y, x',y',x'', y'', as for JMP, s,s',and s'' are needed for continuity.
    */
-  max_s = map_waypoints_s.back();
-  pp.setMaxS(max_s);
+  //add the last point to connect the first one;
+  map_waypoints_s.push_back(max_s);
+  map_waypoints_x.push_back(map_waypoints_x.front());
+  map_waypoints_y.push_back(map_waypoints_y.front());
+
   tk::spline sp_x;
   tk::spline sp_y;
   sp_x.set_points(map_waypoints_s, map_waypoints_x);
@@ -231,6 +237,7 @@ int main() {
 
   //pack data for path planer
   InputData d;
+
 
   h.onMessage(
       [&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,max_s,
@@ -314,6 +321,7 @@ int main() {
             	  double x=xy[0];
             	  double y=xy[1];
 
+
             	  if(next_x_vals.size()>1) {
             		  size_t last= next_x_vals.size()-1;
             		  double d1 = distance(next_x_vals[last],next_y_vals[last],next_x_vals[last-1],next_y_vals[last-1]);
@@ -331,9 +339,6 @@ int main() {
             	  next_y_vals.push_back(y);
 
               }
-
-
-
 
 
               // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds

@@ -21,7 +21,9 @@ using namespace std;
 const double MAX_VEL = 21;//m/s  50 mph
 const double MAX_ACCEL = 10; //10m/s²
 const double MAX_JERK = 10; //10m/s3
-const double CAR_LENGTH = 4;
+const double SAFT_DISTANCE = 30; // the distance between front car or back car.
+const double CRASH_DISTANCE = 10; //if distance is small than this, change lane may crash
+const double MAX_DISTANCE = 1.0e20; // maximum distance, used when car is not detected.
 const double dT= 0.02;//20ms time step
 
 
@@ -33,6 +35,7 @@ PathPlaner::PathPlaner() {
   last_predict_v = 0;
   last_predict_sd.s = numeric_limits<double>::lowest();
   last_predict_sd.d = numeric_limits<double>::lowest();
+  max_s = 6945.554;
 }
 
 PathPlaner::~PathPlaner() {
@@ -52,15 +55,15 @@ void PathPlaner::processInputData(const InputData& data)
 	//check other vehicles
 
 	env.front.exist = false;
-	env.front.sd = {1e10,1e10};
+	env.front.sd = {MAX_DISTANCE,MAX_DISTANCE};
 	env.front_left.exist = false;
-	env.front_left.sd = {1e10,1e10};
+	env.front_left.sd = {MAX_DISTANCE,MAX_DISTANCE};
 	env.front_right.exist = false;
-	env.front_right.sd = {1e10,1e10};
+	env.front_right.sd = {MAX_DISTANCE,MAX_DISTANCE};
 	env.back_left.exist = false;
-	env.back_left.sd = {-1e10,-1e10};
+	env.back_left.sd = {-MAX_DISTANCE,-MAX_DISTANCE};
 	env.back_right.exist = false;
-	env.back_right.sd = {-1e10,-1e10};
+	env.back_right.sd = {-MAX_DISTANCE,-MAX_DISTANCE};
 
 	for(int i=0; i<data.sensor_data.size();i++){
 		vector<double> other = data.sensor_data[i];
@@ -155,11 +158,6 @@ bool PathPlaner::generatePrediction()
 	cout<<" CAR in LANE:" <<ego.lane_id<<" Movement:"<<movement;
     //cout<<"\r"<<flush;
     cout<<endl;
-
-    if(last_predict_v >MAX_VEL)
-    {
-    	cout<<" Over Speed:!!!"<<endl;
-    }
 	return true;
 
 }
@@ -173,18 +171,18 @@ void PathPlaner::getChangeToLeftLaneTrajectory(bool left){
 	bool slowDown = false;
 	if(left){
 		d = (ego.lane_id - 2) * 4 + 2;
-		if (env.front_left.exist && env.front_left.sd.s - ego.sd.s < 40 && env.front_left.v < last_predict_v) {
+		if (env.front_left.exist && env.front_left.sd.s - ego.sd.s < SAFT_DISTANCE && env.front_left.v < last_predict_v) {
 			slowDown = true;
 		}
 	}else
 	{
 		d = (ego.lane_id) * 4 + 2;
-		if (env.front_right.exist && env.front_right.sd.s - ego.sd.s < 40 && env.front_right.v < last_predict_v) {
+		if (env.front_right.exist && env.front_right.sd.s - ego.sd.s < SAFT_DISTANCE && env.front_right.v < last_predict_v) {
 			slowDown = true;
 		}
 	}
 
-	if (env.front.exist && env.front.sd.s - ego.sd.s < 40
+	if (env.front.exist && env.front.sd.s - ego.sd.s < SAFT_DISTANCE
 			&& env.front.v < last_predict_v) {
 		slowDown = true;
 	}
@@ -192,7 +190,7 @@ void PathPlaner::getChangeToLeftLaneTrajectory(bool left){
 	vector<double> s_path;
 	vector<double> d_path;
 
-	int N = 116;
+	int N = 116;//some magic number, calculated for car to move appr. 4 meter
 
 	/***
 	 * get the path of d first
@@ -233,7 +231,7 @@ void PathPlaner::getKeepLaneTrajectory(){
   double d = (ego.lane_id-1) * 4 + 2;
   double v;
   bool slowDown = false;
-  if (env.front.exist && env.front.sd.s - ego.sd.s < 40 &&env.front.v <last_predict_v) {
+  if (env.front.exist && env.front.sd.s - ego.sd.s < SAFT_DISTANCE &&env.front.v <last_predict_v) {
     slowDown = true;
   }
 
@@ -346,6 +344,9 @@ double PathPlaner::get_s_path(double jerk, double dv,int N,vector<double>& s_pat
 			jerk = jerk_needed *copysign(1,dv);
 		}else{
 			jerk = jerk *copysign(1,dv);
+			if(dv<0){
+				cout<<"!!!!!! Need more break time!!!!!!"<<endl;
+			}
 		}
 
 		double delta_s1 = v0*(t/2) + jerk*pow(t/2,3)/6 ;//distance is third polynomial curve
@@ -374,10 +375,17 @@ double PathPlaner::getKeepLaneScore() {
 	if(!env.front.exist){
 		score +=1;
 		env.front.v = MAX_VEL;
-		env.front.sd.s = 1e10;
+		env.front.sd.s = MAX_DISTANCE;
 	}
 
-	if((env.front.sd.s - ego.sd.s) > 40)
+	if ((env.front.sd.s - ego.sd.s) / SAFT_DISTANCE > 10) {
+		score += 10;
+	} else {
+		score += (env.front.sd.s - ego.sd.s) / SAFT_DISTANCE;
+	}
+
+
+	if((env.front.sd.s - ego.sd.s) > SAFT_DISTANCE)
 	{
 		score +=MAX_VEL;
 	}else{
@@ -391,35 +399,36 @@ double PathPlaner::getKeepLaneScore() {
 
 double PathPlaner::getChangeLeftScore() {
 	double score = 0;
-	if (!env.front.exist) {
-		score += 1;
-		env.front.v = MAX_VEL;
-		env.front.sd.s = 1e10;
-	}
 
 	if(!env.front_left.exist)
 	{
 		score += 1;
 		env.front_left.v = MAX_VEL;
-		env.front_left.sd.s = 1e10;
+		env.front_left.sd.s = MAX_DISTANCE;
+	}
+
+	if ((env.front_left.sd.s - ego.sd.s) / SAFT_DISTANCE > 10) {
+		score += 10;
+	} else {
+		score += (env.front_left.sd.s - ego.sd.s) / SAFT_DISTANCE;
 	}
 
 
-	if ((env.front_left.sd.s - ego.sd.s) > 40) {
+	if ((env.front_left.sd.s - ego.sd.s) > SAFT_DISTANCE) {
 		score += MAX_VEL;
 	}else
 	{
-		score += env.front.v - ego.v;
+		score += env.front_left.v - ego.v;
 	}
 
 	if(env.back_left.exist)
 	{
 		score -=1;
-		if((ego.sd.s - env.back_left.sd.s )< 40)
+		if((ego.sd.s - env.back_left.sd.s )< SAFT_DISTANCE)
 		{
 			score -=1;
 			//check if it hits by back car
-			if( (ego.sd.s - env.back_left.sd.s )< 10) {
+			if( (ego.sd.s - env.back_left.sd.s )< CRASH_DISTANCE) {
 				score -=99;
 			}
 		}
@@ -429,31 +438,33 @@ double PathPlaner::getChangeLeftScore() {
 
 double PathPlaner::getChangeRightScore() {
 	double score = 0;
-	if (!env.front.exist) {
-		score += 1;
-		env.front.v = MAX_VEL;
-		env.front.sd.s = 1e10;
-	}
 
 	if (!env.front_right.exist) {
 		score += 1;
 		env.front_right.v = MAX_VEL;
-		env.front_right.sd.s = 1e10;
+		env.front_right.sd.s = MAX_DISTANCE;
 	}
 
-	if ((env.front_right.sd.s - ego.sd.s) > 40) {
+	if ((env.front_right.sd.s - ego.sd.s) / SAFT_DISTANCE > 10) {
+		score += 10;
+	} else {
+		score += (env.front_right.sd.s - ego.sd.s) / SAFT_DISTANCE;
+	}
+
+
+	if ((env.front_right.sd.s - ego.sd.s) > SAFT_DISTANCE) {
 		score += MAX_VEL;
 	}else
 	{
-		score += env.front.v - ego.v;
+		score += env.front_right.v - ego.v;
 	}
 
 	if (env.back_right.exist) {
 		score -= 1;
-		if ((ego.sd.s - env.back_right.sd.s) < 40) {
+		if ((ego.sd.s - env.back_right.sd.s) < SAFT_DISTANCE) {
 			score -= 1;
 			//check if it hits by back car
-			if ((ego.sd.s - env.back_right.sd.s) < 10) {
+			if ((ego.sd.s - env.back_right.sd.s) < CRASH_DISTANCE) {
 				score -= 99;
 			}
 		}

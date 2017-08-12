@@ -78,8 +78,8 @@ class PathPlaner {
   double getKeepLaneScore();
   double getChangeLeftScore();
   double getChangeRightScore();
-  double get_d_path(double jerk,double target_d, int N,vector<double>& d_path);
-  double get_s_path(double jerk,double dv, int N,vector<double>& s_path);
+  void getKeepLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path);
+  void getChangeLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path);
 };
 
 #endif /* PATHPLANER_H_ */

@@ -217,7 +217,7 @@ void PathPlaner::getChangeToLeftLaneTrajectory(bool left){
 	}
 
 
-	getChangeLanePath(delta_v, d, s_path, d_path);
+	generateChangeLanePath(delta_v, d, s_path, d_path);
 
 	for(int i= 0; i<s_path.size();i++)
 	{
@@ -256,7 +256,7 @@ void PathPlaner::getKeepLaneTrajectory(){
   }
 
 
-  getKeepLanePath(delta_v, d, s_path, d_path);
+  generateKeepLanePath(delta_v, d, s_path, d_path);
 
   for (int i = 0; i < s_path.size(); i++) {
 	  last_prediction.d.push_back(d_path[i]);
@@ -264,7 +264,7 @@ void PathPlaner::getKeepLaneTrajectory(){
   }
 }
 
-void PathPlaner::getKeepLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path) {
+void PathPlaner::generateKeepLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path) {
 	/***
 	 * generate point along d direction.
 	 **/
@@ -350,7 +350,7 @@ void PathPlaner::getKeepLanePath(double dv,double d_target,vector<double>& s_pat
 		last_predict_sd.d = d_path.back();
 	}
 }
-void PathPlaner::getChangeLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path) {
+void PathPlaner::generateChangeLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path) {
 	/***
 	 * generate point along d direction.
 	 **/

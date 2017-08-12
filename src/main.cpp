@@ -162,7 +162,7 @@ vector<double> getXY(double s, double d, vector<double> maps_s,
 
 }
 
-vector<double> getXY2(double s, double d, tk::spline& sp_x,tk::spline& sp_y) {
+vector<double> getXY2(double s, double d, const tk::spline& sp_x,const tk::spline& sp_y) {
 
   const double ds=0.0001;
 
@@ -183,7 +183,7 @@ const int WP_COUNT=5;
 int main() {
   uWS::Hub h;
 
-  PathPlaner pp;
+
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
   vector<double> map_waypoints_y;
@@ -196,8 +196,7 @@ int main() {
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
 
-  //tell way point is a round trip and rest s when it overflow
-  pp.setMaxS(max_s);
+
 
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
@@ -220,10 +219,6 @@ int main() {
     map_waypoints_dx.push_back(d_x);
     map_waypoints_dy.push_back(d_y);
   }
-  /***
-   * keep a variable containing last trajectory including
-   * x,y, x',y',x'', y'', as for JMP, s,s',and s'' are needed for continuity.
-   */
   //add the last point to connect the first one;
   map_waypoints_s.push_back(max_s);
   map_waypoints_x.push_back(map_waypoints_x.front());
@@ -235,8 +230,15 @@ int main() {
   sp_y.set_points(map_waypoints_s, map_waypoints_y);
 
 
+  auto getXYFromSD = [&sp_x,&sp_y](double s,double d){
+	  return getXY2(s,d,sp_x,sp_y);
+  };
   //pack data for path planer
   InputData d;
+  PathPlaner pp;
+  //tell way point is a round trip and rest s when it overflow
+  pp.setMaxS(max_s);
+  pp.setGetXYFunc(getXYFromSD);
 
 
   h.onMessage(
@@ -323,14 +325,10 @@ int main() {
 
 
             	  if(next_x_vals.size()>1) {
-            		  size_t last= next_x_vals.size()-1;
-            		  double d1 = distance(next_x_vals[last],next_y_vals[last],next_x_vals[last-1],next_y_vals[last-1]);
-            		  double d2 = distance(next_x_vals[last],next_y_vals[last],x,y);
-            		  double v1 = d1/0.02;
-            		  double v2 = d2/0.02;
-            		  if(v1 > 22.35 || v2>22.35)
+            		  double v = distance(next_x_vals.back(),next_y_vals.back(),x,y)/0.02;
+            		  if(v > 22.35)
             		  {
-            			  cout<<"Violate speed:"<<v1<<" "<<v2<<endl;
+            			  cout<<"Violate speed:"<<v<<endl;
             		  }
 
             	  }

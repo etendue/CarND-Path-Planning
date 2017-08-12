@@ -10,6 +10,7 @@
 
 #include <vector>
 #include <deque>
+#include <functional>
 using namespace std;
 
 
@@ -63,12 +64,14 @@ class PathPlaner {
   Trajectory last_prediction;
   double max_s;
   //
+  function<vector<double>(double,double)> getXYFromSD;
 
  public:
   void processInputData(const InputData& data);
   bool generatePrediction();
   Trajectory & getPrediction(){return last_prediction;};
   void setMaxS(const double s){ max_s = s;};
+  void setGetXYFunc(function<vector<double>(double,double)> func){ getXYFromSD = func;};
 
  private:
 
@@ -78,8 +81,8 @@ class PathPlaner {
   double getKeepLaneScore();
   double getChangeLeftScore();
   double getChangeRightScore();
-  void getKeepLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path);
-  void getChangeLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path);
+  void generateKeepLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path);
+  void generateChangeLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path);
 };
 
 #endif /* PATHPLANER_H_ */

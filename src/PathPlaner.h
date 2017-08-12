@@ -9,28 +9,38 @@
 #define PATHPLANER_H_
 
 #include <vector>
-#include "Eigen-3.3/Eigen/Dense"
+#include <deque>
 using namespace std;
-using namespace Eigen;
-
-const int N =50;
 
 
-struct PointState2D{
-	  VectorXd s;
-	  VectorXd d;
+struct FrenetSD{
+  double s;
+  double d;
 };
+
+struct Car{
+  FrenetSD sd;
+  double v;
+  double a;
+  int lane_id;
+  bool exist;
+};
+
+
 
 struct InputData{
-  PointState2D self_state;
+  Car ego_update;
   vector<vector<double> > sensor_data;
+  int update_count;
+};
+struct Trajectory
+{
+  deque<double> s;
+  deque<double> d;
 };
 
-struct Vehicle{
-	PointState2D state;
-	int lane_id;
-	bool exist;
-};
+
+
 
 class PathPlaner {
  public:
@@ -39,37 +49,37 @@ class PathPlaner {
 
  private:
   struct CarEnvironment{
-  	Vehicle front_left;
-  	Vehicle front_right;
-  	Vehicle front;
-  	Vehicle back_left;
-  	Vehicle back_right;
+    Car front_left;
+    Car front_right;
+    Car front;
+    Car back_left;
+    Car back_right;
   } env;
 
-  struct CurveFlag{
-    bool overspeed;
-    bool underspeed;
-    bool overaccel;
-    bool overjerk;
-  };
 
-  Vehicle self;
+  Car ego;
+  FrenetSD last_predict_sd;
+  double last_predict_v;
+  Trajectory last_prediction;
+  double max_s;
   //
 
  public:
-  void processingInputData(const InputData& data);
-  void getBestTrajectory(std::vector<PointState2D>& trj);
+  void processInputData(const InputData& data);
+  bool generatePrediction();
+  Trajectory & getPrediction(){return last_prediction;};
+  void setMaxS(const double s){ max_s = s;};
 
  private:
-  VectorXd JMT(const VectorXd& start,const VectorXd& target, double T);
-  bool generateValidPath(const PointState2D& target, vector<PointState2D>& trj);
-  double getBestJMP_KeepLane(std::vector<PointState2D>& path);
-  double generatePathWithLimits(const PointState2D &target_state,vector<PointState2D>& path,bool distance_limit, bool jerk_limit=true);
-  double generateSafePath(const PointState2D &target_state,vector<PointState2D>& path);
-  double getFollow_KeepLane(vector<PointState2D>& path);
-  vector<VectorXd> generateJMTPath(const PointState2D& start,const PointState2D& target, double T, CurveFlag& flags);
-	void getCurve(const std::vector<VectorXd>& best_coeff,
-			std::vector<PointState2D>& path);
+
+  void getKeepLaneTrajectory();
+  void getChangeToLeftLaneTrajectory(bool left=true);
+  void getChangeToRightLaneTrajectory();
+  double getKeepLaneScore();
+  double getChangeLeftScore();
+  double getChangeRightScore();
+  double get_d_path(double jerk,double target_d, int N,vector<double>& d_path);
+  double get_s_path(double jerk,double dv, int N,vector<double>& s_path);
 };
 
 #endif /* PATHPLANER_H_ */

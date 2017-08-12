@@ -22,7 +22,6 @@ struct FrenetSD{
 struct Car{
   FrenetSD sd;
   double v;
-  double a;
   int lane_id;
   bool exist;
 };
@@ -32,12 +31,11 @@ struct Car{
 struct InputData{
   Car ego_update;
   vector<vector<double> > sensor_data;
-  int update_count;
 };
 struct Trajectory
 {
-  deque<double> s;
-  deque<double> d;
+  deque<double> x;
+  deque<double> y;
 };
 
 
@@ -61,6 +59,8 @@ class PathPlaner {
   Car ego;
   FrenetSD last_predict_sd;
   double last_predict_v;
+  double last_x;
+  double last_y;
   Trajectory last_prediction;
   double max_s;
   //
@@ -81,8 +81,8 @@ class PathPlaner {
   double getKeepLaneScore();
   double getChangeLeftScore();
   double getChangeRightScore();
-  void generateKeepLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path);
-  void generateChangeLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path);
+  void generateKeepLanePath(double dv,double d_target,vector<double>& x_path,vector<double>& y_path);
+  void generateChangeLanePath(double dv,double d_target,vector<double>& x_path,vector<double>& y_path);
 };
 
 #endif /* PATHPLANER_H_ */

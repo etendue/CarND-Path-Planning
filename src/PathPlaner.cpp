@@ -18,7 +18,8 @@
 using namespace std;
 
 //define constants
-const double MAX_VEL = 21;//m/s  50 mph
+const double MAX_VEL = 20;//
+const double MPH_50 = 22.35; // 50mph
 const double MAX_ACCEL = 10; //10m/s²
 const double MAX_JERK = 10; //10m/s3
 const double SAFT_DISTANCE = 30; // the distance between front car or back car.
@@ -29,14 +30,16 @@ const double dT= 0.02;//20ms time step
 
 
 PathPlaner::PathPlaner() {
-  ego.a =0;
   ego.sd={0,0};
   ego.v = 0;
+  ego.exist = true;
   ego.lane_id =0;
   last_predict_v = 0;
   last_predict_sd.s = numeric_limits<double>::lowest();
   last_predict_sd.d = numeric_limits<double>::lowest();
   max_s = 6945.554;
+  last_x = 0;
+  last_y = 0;
 }
 
 PathPlaner::~PathPlaner() {
@@ -50,6 +53,9 @@ void PathPlaner::processInputData(const InputData& data)
 
 	if(last_predict_sd.s == numeric_limits<double>::lowest() ){
 		last_predict_sd = ego.sd;
+		auto xy = getXYFromSD(ego.sd.s, ego.sd.d);
+		last_x = xy[0];
+		last_y = xy[1];
 	}
 
 
@@ -161,13 +167,13 @@ bool PathPlaner::generatePrediction()
 
 	cout <<" "<<car_pos;
 
-    cout<<"    SPEED:"<<setw(5)<<setprecision(3)<<last_predict_v;
+    cout<<"    SPEED:"<<setw(5)<<setprecision(3)<<left<<last_predict_v;
     cout<<"    Next Move:"<<movement;
-	cout<<"    SCORES:(LEFT:"<<setw(5)<<setprecision(3)<<score_left;
-	cout<<" KEEP:"<<setw(5)<<setprecision(3)<<score_keep;
-	cout<<" RIGHT:"<<setw(5)<<setprecision(3)<<score_right;
-	cout<<")\r"<<flush;
-    cout<<endl;
+	cout<<"    SCORES:(LEFT:"<<setw(5)<<setprecision(3)<<left<<score_left;
+	cout<<" KEEP:"<<setw(5)<<setprecision(3)<<left<<score_keep;
+	cout<<" RIGHT:"<<setw(5)<<setprecision(3)<<left<<score_right;
+	cout<<") \r"<<flush;
+
 
 	return true;
 
@@ -182,12 +188,14 @@ void PathPlaner::getChangeToLeftLaneTrajectory(bool left){
 	bool slowDown = false;
 	if(left){
 		d = (ego.lane_id - 2) * 4 + 2;
+		d = d<2? 2:d;
 		if (env.front_left.exist && env.front_left.sd.s - ego.sd.s < SAFT_DISTANCE && env.front_left.v < last_predict_v) {
 			slowDown = true;
 		}
 	}else
 	{
 		d = (ego.lane_id) * 4 + 2;
+		d = d>10? 10:d;
 		if (env.front_right.exist && env.front_right.sd.s - ego.sd.s < SAFT_DISTANCE && env.front_right.v < last_predict_v) {
 			slowDown = true;
 		}
@@ -198,8 +206,8 @@ void PathPlaner::getChangeToLeftLaneTrajectory(bool left){
 		slowDown = true;
 	}
 
-	vector<double> s_path;
-	vector<double> d_path;
+	vector<double> x_path;
+	vector<double> y_path;
 	double delta_v;
 
 	if (slowDown) {
@@ -217,12 +225,12 @@ void PathPlaner::getChangeToLeftLaneTrajectory(bool left){
 	}
 
 
-	generateChangeLanePath(delta_v, d, s_path, d_path);
+	generateChangeLanePath(delta_v, d, x_path, y_path);
 
-	for(int i= 0; i<s_path.size();i++)
+	for(int i= 0; i<x_path.size();i++)
 	{
-		last_prediction.d.push_back(d_path[i]);
-		last_prediction.s.push_back(s_path[i]);
+		last_prediction.x.push_back(x_path[i]);
+		last_prediction.y.push_back(y_path[i]);
 	}
 
 }
@@ -235,8 +243,8 @@ void PathPlaner::getKeepLaneTrajectory(){
   }
 
   double d = (ego.lane_id-1) * 4 + 2;
-  vector<double> s_path;
-  vector<double> d_path;
+  vector<double> x_path;
+  vector<double> y_path;
 
   double delta_v;
 
@@ -256,15 +264,16 @@ void PathPlaner::getKeepLaneTrajectory(){
   }
 
 
-  generateKeepLanePath(delta_v, d, s_path, d_path);
+  generateKeepLanePath(delta_v, d, x_path, y_path);
 
-  for (int i = 0; i < s_path.size(); i++) {
-	  last_prediction.d.push_back(d_path[i]);
-	  last_prediction.s.push_back(s_path[i]);
+  for (int i = 0; i < x_path.size(); i++) {
+	  last_prediction.x.push_back(x_path[i]);
+	  last_prediction.y.push_back(y_path[i]);
   }
+
 }
 
-void PathPlaner::generateKeepLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path) {
+void PathPlaner::generateKeepLanePath(double dv,double d_target,vector<double>& x_path,vector<double>& y_path) {
 	/***
 	 * generate point along d direction.
 	 **/
@@ -272,166 +281,208 @@ void PathPlaner::generateKeepLanePath(double dv,double d_target,vector<double>& 
 	double t = 1.0;
 	double v0 = last_predict_v;
 	double s0 = last_predict_sd.s;
-	double jerk_s = MAX_JERK;
+	double d0 = last_predict_sd.d;
+	double delta_d = d_target - last_predict_sd.d;
+	double jerk_s = 0;
 	double jerk_d = 0;
 
-	if (dv >0 && dv < 0.01) {
-		//spare the manouver, keep the current speed;
-		for (size_t i = 1; i <= int(t/dT); i++) {
-			double s = s0 + last_predict_v * i * dT;
-			s_path.push_back(fmod(s,max_s));
-		}
-		last_predict_sd.s = s_path.back();
-	}else
-	{
+	vector<double> waypoints_t(5);
+	vector<double> waypoints_x(5);
+	vector<double> waypoints_y(5);
+	vector<double> waypoints_s(5);
+	vector<double> waypoints_d(5,d0);
+
+	bool overSpeed = false;
+	do{
+		jerk_s = MAX_JERK *copysign(1,dv);
 		//check if it hits the front car in case slow down
 		if(dv <0)
 		{
-		     double safe_distance = env.front.sd.s - s0 - + env.front.v * t + CAR_LENGTH ;
-		     double delta_s2 = v0*t - jerk_s*pow(t/2,3);
-		     while(delta_s2 > safe_distance)
+		     double safe_distance = env.front.sd.s - s0 + env.front.v * t + CAR_LENGTH ;
+		     double s_travel = v0*t + jerk_s*pow(t/2,3);
+		     while(s_travel > safe_distance)
 		     {
 		    	 t +=dT;
-		    	 safe_distance = env.front.sd.s - s0 - + env.front.v * t + CAR_LENGTH ;
-		    	 delta_s2 = v0*t - jerk_s*pow(t/2,3);
+		    	 safe_distance = env.front.sd.s - s0 + env.front.v * t + CAR_LENGTH ;
+		    	 s_travel = v0*t + jerk_s*pow(t/2,3);
 		     }
 		}
 
-		double jerk_s_needed =fabs(dv/pow(t/2,2));
-		if(jerk_s_needed< jerk_s){
+		double jerk_s_needed = dv / pow(t / 2, 2);
+		if (fabs(jerk_s_needed) < fabs(jerk_s)) {
 			jerk_s = jerk_s_needed;
 		}
 
-		double delta_s1 = v0*(t/2) + jerk_s*pow(t/2,3)/6 *copysign(1,dv) ;//distance is third polynomial curve
-		double delta_s2 = v0*t + jerk_s*pow(t/2,3)*copysign(1,dv);
-		vector<double> waypoints_t = {0,t/2,t};
-		vector<double> waypoints_s = { s0, s0 + delta_s1, s0 + delta_s2};
-		tk::spline sp;
-		sp.set_points(waypoints_t,waypoints_s);
+		double delta_s1 = v0 * (t / 4) + jerk_s * pow(t / 4, 3) / 6;	//distance is third polynomial curve
+		double delta_s2 = v0 * (t / 2) + jerk_s * pow(t / 2, 3) / 6;	//distance is third polynomial curve
+		double delta_s3 = v0 * (t * 3 / 4)+ jerk_s * pow(t, 3) * 25 / 384;
+		double delta_s4 = v0 * (t) + jerk_s * pow(t / 2, 3);
 
-		for (size_t i = 1; i <= (t/dT); i++) {
-			s_path.push_back(fmod(sp(dT*i),max_s));
-		}
-		last_predict_sd.s = s_path.back();
-		last_predict_v = v0 + jerk_s*pow(t/2,2)*copysign(1,dv);
-	}
+	    jerk_d = sqrt(MAX_JERK*MAX_JERK - jerk_s*jerk_s)*copysign(1,delta_d);
+	     // the maximum distance the car can travel with given jerk  -- j*(t/4)³*2 = d
 
-	/***
-	 * generate point along d direction.
-	 **/
-
-	// up down down up;
-	// the distance between now and target
-	double delta_d = d_target - last_predict_sd.d;
-	jerk_d = sqrt(MAX_JERK*MAX_JERK - jerk_s*jerk_s);
-	// the maximum distance the car can travel with given jerk  -- j*(t/4)³*2 = d
-
-
-	if (fabs(jerk_d) < 0.01) {
-		d_path.resize(int(t/dT), last_predict_sd.d);
-	} else {
-		double d_max = jerk_d * pow(t / 4, 3) * 2;
-		if (fabs(delta_d) < d_max) {
-			jerk_d = fabs(delta_d) / (2 * pow(t / 4, 3));
+	    if (fabs(jerk_d) > 0.001) {
+			double d_max = jerk_d * pow(t / 4, 3) * 2;
+			if (fabs(delta_d) < fabs(d_max)) {
+				jerk_d = delta_d/(pow(t / 4, 3) *2);
+			}
+			double delta_d1 = jerk_d * pow(t / 4, 3)/ 6 ;//distance is third polynomial curve
+			double delta_d2 = jerk_d * pow(t / 4, 3);
+			waypoints_d = {d0, d0 + delta_d1, d0 + delta_d2, d0 + 2 * delta_d2 - delta_d1, d0 + 2 * delta_d2};
 		}
 
-		double d0 = last_predict_sd.d;
-		double delta_d1 = jerk_d * pow(t / 4, 3) / 6*copysign(1, delta_d);	//distance is third polynomial curve
-		double delta_d2 = jerk_d * pow(t / 4, 3) *copysign(1, delta_d);
-		vector<double> waypoints_t = { 0, t / 4, t / 2, 3 * t / 4, t };
-		vector<double> waypoints_d = { d0, d0 + delta_d1, d0 + delta_d2, d0
-				+ 2 * delta_d2 - delta_d1, d0 + 2 * delta_d2 };
-		tk::spline sp;
-		sp.set_points(waypoints_t, waypoints_d);
+	    waypoints_t = { 0, t / 4, t / 2, 3 * t / 4, t };
+	    waypoints_s = { s0, s0 + delta_s1, s0 + delta_s2,s0+delta_s3, s0 + delta_s4};
+	    waypoints_s[0] = fmod(waypoints_s[0],max_s);
+	    waypoints_s[1] = fmod(waypoints_s[1],max_s);
+	    waypoints_s[2] = fmod(waypoints_s[2],max_s);
+	    waypoints_s[3] = fmod(waypoints_s[3],max_s);
+	    waypoints_s[4] = fmod(waypoints_s[4],max_s);
 
-		for (size_t i = 1; i <= int(t/dT); i++) {
-			d_path.push_back(sp(dT * i));
-		}
-		last_predict_sd.d = d_path.back();
-	}
+	    for (size_t i = 0; i < 5; i++) {
+	    	vector<double> xy = getXYFromSD(waypoints_s[i], waypoints_d[i]);
+	    	waypoints_x[i]=  xy[0];
+	    	waypoints_y[i] = xy[1];
+	    }
+
+	    tk::spline spline_x;
+	    tk::spline spline_y;
+	    spline_x.set_points(waypoints_t, waypoints_x);
+	    spline_y.set_points(waypoints_t, waypoints_y);
+
+	    x_path.clear();
+	    y_path.clear();
+	    double x_prev = last_x;
+	    double y_prev = last_y;
+
+	    overSpeed = false;
+	    for (size_t i = 1; i <= int(t / dT); i++) {
+	    	x_path.push_back(spline_x(i * dT));
+	    	y_path.push_back(spline_y(i * dT));
+	    	double dx = x_path.back() - x_prev;
+	    	double dy = y_path.back() - y_prev;
+
+	    	if (sqrt(dx * dx + dy * dy) > MPH_50  * dT) {
+	    		dv -=1;
+	    		cout << "!!!Over speed!!! " <<t<<" dv:"<<dv<<  endl;
+	    		overSpeed = true;
+	    		break;
+	    	}
+	    	x_prev = x_path.back();
+	    	y_prev = y_path.back();
+	    }
+	} while (overSpeed && t > dT);
+
+	last_predict_v = v0 + jerk_s * pow(t / 2, 2);
+	last_predict_sd.s = waypoints_s.back();
+	last_predict_sd.d = waypoints_d.back();
+	last_x = x_path.back();
+	last_y = y_path.back();
 }
-void PathPlaner::generateChangeLanePath(double dv,double d_target,vector<double>& s_path,vector<double>& d_path) {
+void PathPlaner::generateChangeLanePath(double dv,double d_target,vector<double>& x_path,vector<double>& y_path) {
 	/***
 	 * generate point along d direction.
 	 **/
-
 	double t = 2.32;
 	double v0 = last_predict_v;
 	double s0 = last_predict_sd.s;
+	double d0 = last_predict_sd.d;
 	//here we consider the cross direction first
+	double delta_d = d_target - d0;
 
-	double jerk_d = MAX_JERK*0.8;
-	double jerk_s = sqrt(MAX_JERK*MAX_JERK - jerk_d*jerk_d);
-	/***
-	 * generate point along d direction.
-	 **/
+	double jerk_d = MAX_JERK*0.8 *copysign(1,delta_d);
+	double jerk_s = sqrt(MAX_JERK*MAX_JERK - jerk_d*jerk_d) *copysign(1,dv);
 
-	// up down down up;
-	// the distance between now and target
-	double delta_d = d_target - last_predict_sd.d;
+	vector<double> waypoints_t(5);
+	vector<double> waypoints_x(5);
+	vector<double> waypoints_y(5);
+	vector<double> waypoints_s(5);
+	vector<double> waypoints_d(5);
+
 
 	// the maximum distance the car can travel with given jerk  -- j*(t/4)³*2 = d
-
-	double d_max = jerk_d * pow(t / 4, 3) * 2;
-
-	while(d_max < fabs(delta_d))
-	{
-		t+=dT;
-		d_max = jerk_d * pow(t / 4, 3) * 2;
+	double d_max = fabs(jerk_d * pow(t / 4, 3) * 2);
+	while (d_max < fabs(delta_d)) {
+		t += dT;
+		d_max = fabs(jerk_d * pow(t / 4, 3) * 2);
 	}
 
-	double d0 = last_predict_sd.d;
-	double delta_d1 = jerk_d * pow(t / 4, 3) / 6 * copysign(1, delta_d);//distance is third polynomial curve
-	double delta_d2 = jerk_d * pow(t / 4, 3) * copysign(1, delta_d);
-	vector<double> waypoints_t = { 0, t / 4, t / 2, 3 * t / 4, t };
-	vector<double> waypoints_d = { d0, d0 + delta_d1, d0 + delta_d2, d0
-			+ 2 * delta_d2 - delta_d1, d0 + 2 * delta_d2 };
-	tk::spline sp;
-	sp.set_points(waypoints_t, waypoints_d);
+	bool overSpeed = false;
 
-	for (size_t i = 1; i <= int(t / dT); i++) {
-		d_path.push_back(sp(dT * i));
-	}
-	last_predict_sd.d = d_path.back();
+	do {
 
-	/***
-	 * Generate points along driving direction
-	 ****/
-	if (dv > 0 && dv < 0.01) {
-		//spare the manouver, keep the current speed;
-		for (size_t i = 1; i <= int(t/dT); i++) {
-			double s = s0 + last_predict_v * i * dT;
-			s_path.push_back(fmod(s, max_s));
-		}
-		last_predict_sd.s = s_path.back();
-	} else {
-		//check if it hits the front car in case slow down
+		double delta_d1 = jerk_d * pow(t / 4, 3) / 6;//distance is third polynomial curve
+		double delta_d2 = jerk_d * pow(t / 4, 3);
 
-		double jerk_s_needed = fabs(dv / pow(t / 2, 2));
-		if (jerk_s_needed < jerk_s) {
+		double jerk_s_needed = dv / pow(t / 2, 2);
+		if (fabs(jerk_s_needed) < fabs(jerk_s)) {
 			jerk_s = jerk_s_needed;
 		}
 
-		double delta_s1 = v0 * (t / 2)
-				+ jerk_s * pow(t / 2, 3) / 6 * copysign(1, dv);	//distance is third polynomial curve
-		double delta_s2 = v0 * t + jerk_s * pow(t / 2, 3) * copysign(1, dv);
-		vector<double> waypoints_t = { 0, t / 2, t };
-		vector<double> waypoints_s = { s0, s0 + delta_s1, s0 + delta_s2 };
-		tk::spline sp;
-		sp.set_points(waypoints_t, waypoints_s);
+		double delta_s1 = v0 * (t / 4) + jerk_s * pow(t / 4, 3) / 6;//distance is third polynomial curve
+		double delta_s2 = v0 * (t / 2) + jerk_s * pow(t / 2, 3) / 6;//distance is third polynomial curve
+		double delta_s3 = v0 * (t * 3 / 4) + jerk_s * pow(t, 3) * 25 / 384;
+		double delta_s4 = v0 * (t) + jerk_s * pow(t / 2, 3);
 
-		for (size_t i = 1; i <= (t / dT); i++) {
-			s_path.push_back(fmod(sp(dT * i), max_s));
+		waypoints_t = { 0, t / 4, t / 2, 3 * t / 4, t };
+		waypoints_d = { d0, d0 + delta_d1, d0 + delta_d2, d0 + 2 * delta_d2 - delta_d1, d0 + 2 * delta_d2 };
+		waypoints_s = { s0, s0 + delta_s1, s0 + delta_s2,s0+delta_s3, s0 + delta_s4};
+		waypoints_s[0] = fmod(waypoints_s[0],max_s);
+		waypoints_s[1] = fmod(waypoints_s[1],max_s);
+		waypoints_s[2] = fmod(waypoints_s[2],max_s);
+		waypoints_s[3] = fmod(waypoints_s[3],max_s);
+		waypoints_s[4] = fmod(waypoints_s[4],max_s);
+
+		for (size_t i = 0; i < 5; i++) {
+			vector<double> xy = getXYFromSD(waypoints_s[i], waypoints_d[i]);
+			waypoints_x[i]=  xy[0];
+			waypoints_y[i] = xy[1];
 		}
-		last_predict_sd.s = s_path.back();
-		last_predict_v = v0 + jerk_s * pow(t / 2, 2) * copysign(1, dv);
-	}
 
+		tk::spline spline_x;
+		tk::spline spline_y;
+		spline_x.set_points(waypoints_t, waypoints_x);
+		spline_y.set_points(waypoints_t, waypoints_y);
+
+		x_path.clear();
+		y_path.clear();
+		double x_prev = last_x;
+		double y_prev = last_y;
+
+		overSpeed = false;
+		for (size_t i = 1; i <= int(t / dT); i++) {
+			x_path.push_back(spline_x(i * dT));
+			y_path.push_back(spline_y(i * dT));
+			double dx = x_path.back() - x_prev;
+			double dy = y_path.back() - y_prev;
+
+			if (sqrt(dx * dx + dy * dy) > MPH_50 * dT) {
+				cout << "!!!Over speed!!! " <<t<<" dv:"<<dv<<  endl;
+                 if(dv>0){
+                	 dv=0;
+                 }else
+                 {
+                	 t -=dT;
+                 }
+
+				 overSpeed = true;
+				 break;
+			}
+			x_prev = x_path.back();
+			y_prev = y_path.back();
+		}
+	} while (overSpeed && t > dT);
+
+
+	last_predict_v = v0 + jerk_s * pow(t / 2, 2);
+	last_predict_sd.s = waypoints_s.back();
+	last_predict_sd.d = waypoints_d.back();
+	last_x = x_path.back();
+	last_y = y_path.back();
 }
 
 double PathPlaner::getKeepLaneScore() {
 	double score = 0;
-
 	//keep lane has per default 1 point more score.
 	score +=2;
 	if(!env.front.exist){
@@ -475,6 +526,10 @@ double PathPlaner::getChangeLeftScore() {
 		score += (env.front_left.sd.s - ego.sd.s) / SAFT_DISTANCE;
 	}
 
+	if ((env.front_left.sd.s - ego.sd.s) < CRASH_DISTANCE) {
+		score -= 99;
+	}
+
 
 	if ((env.front_left.sd.s - ego.sd.s) > SAFT_DISTANCE) {
 		score += MAX_VEL;
@@ -511,6 +566,10 @@ double PathPlaner::getChangeRightScore() {
 		score += 10;
 	} else {
 		score += (env.front_right.sd.s - ego.sd.s) / SAFT_DISTANCE;
+	}
+
+	if ((env.front_right.sd.s - ego.sd.s) < CRASH_DISTANCE) {
+		score -= 99;
 	}
 
 

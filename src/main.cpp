@@ -292,8 +292,6 @@ int main() {
               d.ego_update.sd= {car_s,car_d};
               d.ego_update.v =  0.44704* car_speed;
               d.ego_update.lane_id = ceil(car_d/4);
-              d.update_count = 50 - size;
-
 
               for(size_t i=0;i<size;i++){
             	  next_x_vals.push_back(previous_path_x[i]);
@@ -308,21 +306,16 @@ int main() {
 
               pp.processInputData(d);
               Trajectory& last_prediction= pp.getPrediction();
-              if((last_prediction.s.size() + size) < 50){
+              if((last_prediction.x.size() + size) < 50){
             	  pp.generatePrediction();
               }
 
               while( next_x_vals.size()<50)
               {
-            	  double s = last_prediction.s.front();
-            	  double d = last_prediction.d.front();
-            	  last_prediction.s.pop_front();
-            	  last_prediction.d.pop_front();
-            	  //auto xy = getXY(s,d,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-            	  auto xy = getXY2(s,d,sp_x,sp_y);
-            	  double x=xy[0];
-            	  double y=xy[1];
-
+            	  double x = last_prediction.x.front();
+            	  double y = last_prediction.y.front();
+            	  last_prediction.x.pop_front();
+            	  last_prediction.y.pop_front();
 
             	  if(next_x_vals.size()>1) {
             		  double v = distance(next_x_vals.back(),next_y_vals.back(),x,y)/0.02;

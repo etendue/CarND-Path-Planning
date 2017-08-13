@@ -34,7 +34,7 @@ surroundings. Here are the list and scores for each category:
 | :------------- |:-----------------:|:------------:|
 | front car not exist, yes or no| +1       |  addtional 1 point |
 | front car is far away >30m   |  +1 ~ +10      | the more far better score   |
-| front is has safe distance 10~30m| -22 ~ +22     | the value depends if front car is slower or faster than ego car   | 
+| front car has safe distance 10~30m| -22 ~ +22     | the value depends if front car is slower or faster than ego car   | 
 | action is keep lane| +2 | the keep lane behavior is by default favored|
 | surrounding cars are near <10m| -99 | penalt when surrounding cars are near, only checked for lane change|
  
@@ -71,10 +71,10 @@ PathPlaner.h PathPlaner.cpp line:425 - 531
 
 #### Respect the constraints 
 Ego car is required to move smoothly and safe. That means no big jerk, acceleration as well as no over speed. Before
-talking about the smooth, the safe part is took care by following tactics:
+talking about the smoothness, the safe part is taken care by following tactics:
 - avoid collision to front car. This is checked during path generation. The generated path shall never reach front car.
-see code in function `generateKeepLane() line 324`. A distance with a car length is checked. This is guaranteed 
-by algorithm unless front car drives backwards :(
+see code in function `generateKeepLane() line 324`. A distance with a car length is checked. This is achieved 
+by algorithm unless front car suddenly slow down or drives backwards :(
 - avoid collision with cars at left and right are purely guided by scores. So if collision happens,make
  the safe distance, speed distance bigger. Quite conservative approach.
  
@@ -103,7 +103,7 @@ between two way points.
 * orange line is speed `d'(t)` a parabolic curve to time has start and end value 0
 * the position blue line `d(t)` is third polynomial curve.
 
-Since all know the time and position, the special points where jerk changes are picked and 
+Since time and positions are known, I picked special points where jerk changes  and 
  use `tk::spline` to fit the curve. The generated path is guaranteed to fulfill the constraints.
  
 For `s direction`, JMT is hard to choose parameter. Because it needs the target state and time to 
@@ -120,14 +120,14 @@ The difference to `d direction` is:
 For slow down case, the only change is first set jerk value to minus then to plus.
 
 ##### Trick to generate path
-The whole plan is under Frenet coordinate, but later transformed to XY. Here are the steps:
+The whole planning is under Frenet coordinate, but later transformed to XY. Here are the steps:
 
-1. get last prediction state(perfect control, so no sensor evaluation is done, in reality we can filters such as Kalman
+1. get last prediction state(perfect control, so no sensor evaluation is done, in reality we can use filters such as Kalman
   or Particle filter)
 2. check target velocity and collision condition, if no collision, set `s'(t)` as big as possible
 3. choose waypoints of s and d from the curve.
 4. convert waypoints from sd to XY
-5. use tk::spline to XY against time
+5. use tk::spline to fit XY against time
 6. interpolate the XYs for simulator
 
 
@@ -147,8 +147,7 @@ Here are some screenshots of simulation.
 For my algorithm, it is not necessary to use previous prediction, as the last ego car state
 is stored and can be recovered even by sensor data. 
 
-But for simplicity. I used the previous prediction to reduce the computation. In general the pathplaner generates 50 points at interval 1s. For change lane
-it generate 200 points for 2.32 seconds.
+But for simplicity. I used the previous prediction to reduce the computation. In general the pathplaner generates 50 points at interval 1s. For change lane it generate 200 points for 2.32 seconds.
 
 ####  Conversion from Frenet to XY has low precision
 Though I smoothed the waypoints curve by interpolating s with X,Y using map data and tk::spline. 

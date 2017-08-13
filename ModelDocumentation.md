@@ -157,7 +157,7 @@ Though I smoothed the waypoints curve by interpolating s with X,Y using map data
  
 #### Maximum speed can not be reached
 This observation may related to simulator. In my path planer the target velocity and position are perfectly
-computed and verified([see line 407-416 in pathPlaner.cpp](./src/PathPlaner.cpp)). The simulator will 
+computed and verified([see line 407-416 in PathPlaner.cpp](./src/PathPlaner.cpp)). The simulator will 
 report overspeed at some positions. So I set the maximum speed in my code lower than maximum speed.
 
 #### Front car suddenly brake or slow down.

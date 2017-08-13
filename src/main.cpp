@@ -161,7 +161,10 @@ vector<double> getXY(double s, double d, vector<double> maps_s,
   return {x,y};
 
 }
-
+/***
+ * the new version using spline tool to smooth the curve and
+ * easy for calculating gradient, the car heading
+ **/
 vector<double> getXY2(double s, double d, const tk::spline& sp_x,const tk::spline& sp_y) {
 
   const double ds=0.0001;
@@ -177,8 +180,6 @@ vector<double> getXY2(double s, double d, const tk::spline& sp_x,const tk::splin
   return {x,y};
 
 }
-
-const int WP_COUNT=5;
 
 int main() {
   uWS::Hub h;
@@ -219,17 +220,22 @@ int main() {
     map_waypoints_dx.push_back(d_x);
     map_waypoints_dy.push_back(d_y);
   }
+  /********************************************
+   * IMPORTANT: without adding the last point,
+   * the car will jump at the end of trip
+   ********************************************/
   //add the last point to connect the first one;
   map_waypoints_s.push_back(max_s);
   map_waypoints_x.push_back(map_waypoints_x.front());
   map_waypoints_y.push_back(map_waypoints_y.front());
 
+  //use spline to fit the waypoints
   tk::spline sp_x;
   tk::spline sp_y;
   sp_x.set_points(map_waypoints_s, map_waypoints_x);
   sp_y.set_points(map_waypoints_s, map_waypoints_y);
 
-
+  //assign new getXY2 for plathplaner to convert Frenet to XY
   auto getXYFromSD = [&sp_x,&sp_y](double s,double d){
 	  return getXY2(s,d,sp_x,sp_y);
   };
@@ -241,10 +247,7 @@ int main() {
   pp.setGetXYFunc(getXYFromSD);
 
 
-  h.onMessage(
-      [&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,max_s,
-      &map_waypoints_dy,&pp,&d,&sp_x,&sp_y]
-      (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&pp,&d](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
           uWS::OpCode opCode) {
         // "42" at the start of the message means there's a websocket message event.
         // The 4 signifies a websocket message
@@ -289,22 +292,28 @@ int main() {
               vector<double> next_y_vals;
               size_t size = previous_path_x.size();
 
+              //the sensor data will be processed and updated
               d.ego_update.sd= {car_s,car_d};
+              //DON'T FORGET conversion between m/s and MPH
               d.ego_update.v =  0.44704* car_speed;
               d.ego_update.lane_id = ceil(car_d/4);
 
+              //use previous data
               for(size_t i=0;i<size;i++){
             	  next_x_vals.push_back(previous_path_x[i]);
             	  next_y_vals.push_back(previous_path_y[i]);
               }
 
+              //add data fusion
               d.sensor_data.clear();
               for(auto vehicle:sensor_fusion) {
                 d.sensor_data.push_back(vehicle);
               }
 
 
+              // update the ego car status and process the data fusion
               pp.processInputData(d);
+              // get the prediction and feed to simulator
               Trajectory& last_prediction= pp.getPrediction();
               if((last_prediction.x.size() + size) < 50){
             	  pp.generatePrediction();
@@ -316,16 +325,6 @@ int main() {
             	  double y = last_prediction.y.front();
             	  last_prediction.x.pop_front();
             	  last_prediction.y.pop_front();
-
-            	  if(next_x_vals.size()>1) {
-            		  double v = distance(next_x_vals.back(),next_y_vals.back(),x,y)/0.02;
-            		  if(v > 22.35)
-            		  {
-            			  cout<<"Violate speed:"<<v<<endl;
-            		  }
-
-            	  }
-
             	  next_x_vals.push_back(x);
             	  next_y_vals.push_back(y);
 

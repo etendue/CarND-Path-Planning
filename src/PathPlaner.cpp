@@ -352,7 +352,7 @@ void PathPlaner::generateKeepLanePath(double dv, double d_target,
     jerk_d = sqrt(MAX_JERK * MAX_JERK - jerk_s * jerk_s) * copysign(1, delta_d);
 
     //skip the calculation if ego car is really near at lane center
-    if (fabs(jerk_d) > 0.001) {
+    if (fabs(delta_d) > 0.1) {
       double d_max = jerk_d * pow(t / 4, 3) * 2;
       if (fabs(delta_d) < fabs(d_max)) {
         jerk_d = delta_d / (pow(t / 4, 3) * 2);
@@ -360,6 +360,9 @@ void PathPlaner::generateKeepLanePath(double dv, double d_target,
       double delta_d1 = jerk_d * pow(t / 4, 3) / 6;	//distance is third polynomial curve
       double delta_d2 = jerk_d * pow(t / 4, 3);
       waypoints_d = {d0, d0 + delta_d1, d0 + delta_d2, d0 + 2 * delta_d2 - delta_d1, d0 + 2 * delta_d2};
+    }else
+    {
+      waypoints_d = {d0, d0, d0, d0, d0};
     }
 
     waypoints_t = {0, t / 4, t / 2, 3 * t / 4, t};
